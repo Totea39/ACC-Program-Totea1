@@ -308,8 +308,14 @@
   }
   .upload-btn-cancel:active { opacity: 0.8; }
 
+  /* ซ่อน input จริง แต่ต้องอยู่ใน DOM เสมอ */
   #fileInputCamera, #fileInputGallery, #fileInputDocument {
-    display: none;
+    position: fixed;
+    top: -9999px;
+    left: -9999px;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
   }
 
   .file-type-badge {
@@ -322,6 +328,22 @@
 <body>
 
 <div class="demo-banner">🎭 โหมด DEMO — ข้อมูลตัวอย่าง (Test Upload, Camera, Sum Data) 🎭</div>
+
+<!--
+  ✅ FIX: วาง file inputs ไว้นอก #app เพื่อไม่ให้ถูก rebuild ทุกครั้งที่ render()
+  ป้องกันปัญหา event listener หลุดเมื่อ innerHTML ถูกเปลี่ยน
+-->
+<input type="file" id="fileInputCamera"
+  accept="image/*,image/heic,image/heif"
+  capture="environment">
+
+<input type="file" id="fileInputGallery"
+  accept="image/*,image/heic,image/heif"
+  multiple>
+
+<input type="file" id="fileInputDocument"
+  accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.jpg,.jpeg,.png,.heic,.heif">
+
 <div id="app"></div>
 
 <script>
@@ -456,33 +478,54 @@ function findReceipt(id) {
   return null;
 }
 
+/* ─── ✅ FIX: ตรวจสอบไฟล์รูปภาพ รองรับ HEIC/HEIF จากไอโฟน ─── */
+function isImageFile(file) {
+  // ตรวจจาก MIME type ก่อน
+  if (file.type && file.type.startsWith('image/')) return true;
+  // fallback: ตรวจจากนามสกุลไฟล์ (HEIC/HEIF อาจไม่มี type บน iOS บางรุ่น)
+  var ext = (file.name || '').toLowerCase().split('.').pop();
+  return ['jpg','jpeg','png','gif','webp','heic','heif','bmp','tiff','tif'].indexOf(ext) !== -1;
+}
+
+/* ─── ✅ FIX: รองรับ HEIC จากไอโฟน (canvas fallback) ─── */
 function resizeAndToDataUrl(file, maxPx, quality) {
   maxPx = maxPx || 1600;
   quality = quality || 0.85;
   return new Promise(function(resolve, reject) {
-    if (!file.type.startsWith('image/')) {
+    if (!isImageFile(file)) {
       reject(new Error('โปรดเลือกไฟล์รูปภาพ'));
       return;
     }
     var reader = new FileReader();
     reader.onerror = function() { reject(new Error('อ่านไฟล์ไม่ได้')); };
-    reader.onload = function() {
+    reader.onload = function(evt) {
+      var originalDataUrl = evt.target.result;
       var img = new Image();
-      img.onerror = function() { reject(new Error('รูปเสียหาย')); };
+      img.onerror = function() {
+        // ✅ HEIC fallback: ถ้า canvas decode ไม่ได้ ส่ง dataUrl ตรงไปเลย
+        // (iOS Safari มักแปลง HEIC เป็น JPEG ให้แล้วก่อนส่งมา แต่กัน edge case)
+        resolve(originalDataUrl);
+      };
       img.onload = function() {
         var w = img.width, h = img.height;
+        if (!w || !h) { resolve(originalDataUrl); return; }
         if (w > maxPx || h > maxPx) {
           if (w > h) { h = Math.round(h * maxPx / w); w = maxPx; }
           else       { w = Math.round(w * maxPx / h); h = maxPx; }
         }
-        var canvas = document.createElement('canvas');
-        canvas.width = w; canvas.height = h;
-        var ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
-        ctx.drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL('image/jpeg', quality));
+        try {
+          var canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          var ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+          ctx.drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        } catch (canvasErr) {
+          // ถ้า canvas วาดไม่ได้ ส่ง original กลับ
+          resolve(originalDataUrl);
+        }
       };
-      img.src = reader.result;
+      img.src = originalDataUrl;
     };
     reader.readAsDataURL(file);
   });
@@ -707,13 +750,11 @@ function renderNav() {
   '</nav>';
 }
 
+/* ✅ FIX: ไม่ต้องสร้าง file inputs ใน renderFab อีกต่อไป เพราะย้ายออกไปไว้นอก #app แล้ว */
 function renderFab() {
   return '<button class="fab ' + (state.uploading ? 'loading' : '') + '" onclick="actions.openUploadModal()">' +
     (state.uploading ? '<span class="spinner"></span>' : '＋') +
-  '</button>' +
-  '<input type="file" id="fileInputCamera" accept="image/*" capture="environment">' +
-  '<input type="file" id="fileInputGallery" accept="image/*">' +
-  '<input type="file" id="fileInputDocument" accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.jpg,.jpeg,.png">';
+  '</button>';
 }
 
 function renderUploadModal() {
@@ -731,7 +772,7 @@ function renderUploadModal() {
       '<div class="upload-section-title">🖼️ ไฟล์ภาพ</div>' +
       '<div class="upload-options">' +
         '<button class="upload-btn upload-btn-gallery" onclick="actions.triggerGallery()">' +
-          '<span>🖼️</span> เลือกจากโฟลเดอร์ (รูปภาพ)' +
+          '<span>🖼️</span> เลือกจากคลังภาพ (รองรับ HEIC/iPhone)' +
         '</button>' +
       '</div>' +
       '<div class="upload-section-title">📄 ไฟล์ข้อมูล</div>' +
@@ -890,17 +931,17 @@ window.actions = {
 
   triggerCamera: function() {
     var input = document.getElementById('fileInputCamera');
-    if (input) input.click();
+    if (input) { input.value = ''; input.click(); }
   },
 
   triggerGallery: function() {
     var input = document.getElementById('fileInputGallery');
-    if (input) input.click();
+    if (input) { input.value = ''; input.click(); }
   },
 
   triggerDocument: function() {
     var input = document.getElementById('fileInputDocument');
-    if (input) input.click();
+    if (input) { input.value = ''; input.click(); }
   },
 
   addProjectFromInput: function() {
@@ -964,7 +1005,8 @@ window.actions = {
         return;
       }
       var file = queue.shift();
-      var isImage = file.type.startsWith('image/');
+      // ✅ FIX: ใช้ isImageFile() แทน file.type.startsWith() เพื่อรองรับ HEIC จากไอโฟน
+      var isImage = isImageFile(file);
       var tempId = 'temp_' + Date.now() + '_' + Math.random().toString(36).slice(2);
       
       state.receipts.unshift({
@@ -1024,30 +1066,28 @@ window.actions = {
   }
 };
 
-document.addEventListener('DOMContentLoaded', function() {
-  var cameraInput = document.getElementById('fileInputCamera');
-  var galleryInput = document.getElementById('fileInputGallery');
-  var documentInput = document.getElementById('fileInputDocument');
-  
-  if (cameraInput) {
-    cameraInput.addEventListener('change', function(e) {
-      actions.handleFiles(e.target.files);
-      this.value = '';
-    });
-  }
-  
-  if (galleryInput) {
-    galleryInput.addEventListener('change', function(e) {
-      actions.handleFiles(e.target.files);
-      this.value = '';
-    });
-  }
-
-  if (documentInput) {
-    documentInput.addEventListener('change', function(e) {
-      actions.handleFiles(e.target.files);
-      this.value = '';
-    });
+/*
+ * ─────────────────────────────────────────────────────────────
+ * ✅ FIX หลัก: ใช้ Event Delegation บน document แทน
+ *    DOMContentLoaded listener บน element โดยตรง
+ *
+ *  ปัญหาเดิม: render() ใช้ innerHTML ซึ่ง rebuild DOM ทุกครั้ง
+ *  ทำให้ <input type="file"> ที่สร้างใหม่ ไม่มี listener ผูกอยู่
+ *  ผลคือ เลือกไฟล์แล้วไม่เกิดอะไรขึ้น
+ *
+ *  Fix: ย้าย <input> ออกนอก #app (ไม่ถูก rebuild) และ
+ *  ผูก listener ครั้งเดียวบน document ผ่าน event delegation
+ * ─────────────────────────────────────────────────────────────
+ */
+document.addEventListener('change', function(e) {
+  var id = e.target && e.target.id;
+  if (id === 'fileInputCamera' || id === 'fileInputGallery' || id === 'fileInputDocument') {
+    var files = e.target.files;
+    if (files && files.length > 0) {
+      actions.handleFiles(files);
+    }
+    // reset ค่า input เพื่อให้อัปโหลดไฟล์เดิมซ้ำได้
+    try { e.target.value = ''; } catch(err) {}
   }
 });
 
