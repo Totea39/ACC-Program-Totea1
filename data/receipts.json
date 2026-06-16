@@ -1,0 +1,18 @@
+{
+  "version": 2,
+  "updatedAt": "2026-06-16T15:32:43.449Z",
+  "receipts": [
+    {
+      "id": "mqgssz5p27qm",
+      "imageId": "mqgssz5pxkfb",
+      "vendor": "ET 명동7호점",
+      "amount": 183269,
+      "currency": "",
+      "date": "2016-06-23",
+      "category": "food",
+      "project": "ทั่วไป",
+      "note": "POS NO: 01, B.No: 0040, 사업자번호: 106-86-94912, 대표자: 장윤석",
+      "createdAt": "2026-06-16T15:29:50.845Z"
+    }
+  ]
+}
