@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>บัญชีใบเสร็จ — Demo</title>
+<title>บัญชีใบเสร็จ — Intelligent Receipt Manager</title>
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; }
   html, body {
@@ -26,7 +26,7 @@
     vertical-align: middle;
   }
   .demo-banner {
-    background: linear-gradient(90deg, #f59e0b, #f97316);
+    background: linear-gradient(90deg, #10b981, #14b8a6);
     color: #fff; padding: 8px 16px; text-align: center;
     font-size: 12px; font-weight: 600;
   }
@@ -72,6 +72,7 @@
   .badge-date { font-size: 11px; color: #94a3b8; }
   .badge-error { color: #ef4444; }
   .badge-processing { color: #94a3b8; display: inline-flex; align-items: center; gap: 6px; }
+  .badge-currency { font-size: 10px; color: #059669; background: #d1fae5; padding: 2px 6px; border-radius: 6px; }
   .fab {
     position: fixed; bottom: 80px; right: 20px; z-index: 200;
     width: 60px; height: 60px; border-radius: 30px;
@@ -164,10 +165,11 @@
   .items-row {
     display: flex; justify-content: space-between;
     padding: 6px 0; border-bottom: 1px solid #e2e8f0;
+    align-items: flex-start; gap: 8px;
   }
   .items-row:last-child { border-bottom: none; }
-  .items-row-name { color: #374151; font-size: 14px; }
-  .items-row-amount { font-weight: 600; font-size: 14px; }
+  .items-row-name { color: #374151; font-size: 14px; flex: 1; }
+  .items-row-amount { font-weight: 600; font-size: 14px; flex-shrink: 0; }
   .items-tax {
     display: flex; justify-content: space-between;
     padding-top: 8px; margin-top: 4px; border-top: 1px solid #e2e8f0;
@@ -231,12 +233,24 @@
     background: linear-gradient(90deg, #3b82f6, #60a5fa);
     transition: width 0.4s ease;
   }
+  .currency-info {
+    background: #d1fae5; border-radius: 12px; padding: 10px 12px;
+    margin-bottom: 12px; font-size: 13px; color: #065f46;
+  }
+  .currency-row {
+    display: flex; justify-content: space-between;
+    padding: 4px 0;
+  }
+  .currency-label { font-weight: 600; }
+  .currency-value { font-family: 'Courier New', monospace; }
 </style>
 </head>
 <body>
 
-<div class="demo-banner">🎭 โหมด DEMO — ข้อมูลตัวอย่าง (Totea#1 : Test Upload, Camera, Sum Data)</div>
+<div class="demo-banner">✨ บัญชีใบเสร็จอัจฉริยะ — AI OCR + Currency Converter + Smart Category</div>
 <div id="app"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
 <script>
 'use strict';
@@ -253,6 +267,19 @@ var CATEGORIES = [
   { id: 'other',     label: 'อื่นๆ',        icon: '📦' }
 ];
 
+var KEYWORDS_CATEGORY = {
+  food: ['ร้านอาหาร', 'ร้านกาแฟ', 'cafe', 'restaurant', 'starbucks', 'mcdonald', 'pizza', 'khao', 'noodle', 'bakery', '7-eleven', 'lotus', 'tesco', 'carrefour', 'fruits', 'market'],
+  travel: ['taxi', 'grab', 'bus', 'train', 'airline', 'petrol', 'gas station', 'parking', 'transport', 'uber', 'motor'],
+  hotel: ['hotel', 'resort', 'hostel', 'inn', 'accommodation', 'booking', 'airbnb'],
+  office: ['office', 'supply', 'stationery', 'printer', 'paper', 'pen', 'desk', 'computer', 'hardware'],
+  software: ['software', 'app', 'subscription', 'adobe', 'microsoft', 'google', 'cloud', 'license', 'aws'],
+  utility: ['water', 'electric', 'electricity', 'internet', 'phone', 'mobile', 'ais', 'true', 'dtac', 'utility'],
+  other: []
+};
+
+var CURRENCY_API = 'https://open.er-api.com/v6/latest/';
+var CACHE_CURRENCY = 'currency_cache_v1';
+
 var MONTHS_TH = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
 
 var initialProjects = [
@@ -261,111 +288,9 @@ var initialProjects = [
   { id: 'p3', name: 'ทริปเที่ยวเกาหลี' }
 ];
 
-var initialReceipts = [
-  {
-    id: 'r1', projectId: 'p3', status: 'done',
-    uploadedAt: '2026-05-29T10:00:00Z',
-    data: {
-      vendor: 'CU 명동역점', date: '2026-05-29',
-      total_thb: 187.20, original_currency: 'KRW',
-      original_amount: 7200, exchange_rate: 0.026,
-      category_id: 'food',
-      items: [
-        { name: '메로나맛우유', amount_thb: 93.60 },
-        { name: '딸기맛우유', amount_thb: 46.80 },
-        { name: '바나나우유', amount_thb: 46.80 }
-      ],
-      tax_thb: 17.00, note: 'ซื้อนมที่ร้านสะดวกซื้อ CU เมียงดง'
-    }
-  },
-  {
-    id: 'r2', projectId: 'p3', status: 'done',
-    uploadedAt: '2026-05-30T18:30:00Z',
-    data: {
-      vendor: 'Olive Young 명동', date: '2026-05-30',
-      total_thb: 1547.00, original_currency: 'KRW',
-      original_amount: 59500, exchange_rate: 0.026,
-      category_id: 'other',
-      items: [
-        { name: 'COSRX Snail Mucin Essence', amount_thb: 624.00 },
-        { name: 'Beauty of Joseon Sunscreen', amount_thb: 442.00 },
-        { name: 'Some By Mi Toner', amount_thb: 481.00 }
-      ],
-      tax_thb: 140.00, note: 'ของฝากเครื่องสำอางจากเกาหลี'
-    }
-  },
-  {
-    id: 'r3', projectId: 'p2', status: 'done',
-    uploadedAt: '2026-06-10T12:00:00Z',
-    data: {
-      vendor: 'Starbucks เซ็นทรัลเวิลด์', date: '2026-06-10',
-      total_thb: 285.00, original_currency: 'THB',
-      original_amount: 285.00, exchange_rate: 1.0,
-      category_id: 'food',
-      items: [
-        { name: 'Caramel Macchiato Tall', amount_thb: 160.00 },
-        { name: 'Croissant', amount_thb: 125.00 }
-      ],
-      tax_thb: 18.65, note: 'ประชุมกับลูกค้าที่ร้านกาแฟ'
-    }
-  },
-  {
-    id: 'r4', projectId: 'p2', status: 'done',
-    uploadedAt: '2026-06-12T09:00:00Z',
-    data: {
-      vendor: 'Grab Thailand', date: '2026-06-12',
-      total_thb: 245.00, original_currency: 'THB',
-      original_amount: 245.00, exchange_rate: 1.0,
-      category_id: 'travel',
-      items: [{ name: 'GrabCar (สาทร → สีลม)', amount_thb: 245.00 }],
-      tax_thb: 0, note: 'เดินทางไปประชุม'
-    }
-  },
-  {
-    id: 'r5', projectId: 'p1', status: 'done',
-    uploadedAt: '2026-06-14T20:00:00Z',
-    data: {
-      vendor: "Lotus's Express", date: '2026-06-14',
-      total_thb: 458.50, original_currency: 'THB',
-      original_amount: 458.50, exchange_rate: 1.0,
-      category_id: 'food',
-      items: [
-        { name: 'นมสด 1L', amount_thb: 62.00 },
-        { name: 'ขนมปังโฮลวีต', amount_thb: 45.00 },
-        { name: 'ไข่ไก่เบอร์ 0', amount_thb: 138.00 },
-        { name: 'ผงซักฟอก', amount_thb: 169.00 },
-        { name: 'น้ำเปล่า 6 ขวด', amount_thb: 44.50 }
-      ],
-      tax_thb: 30.00, note: 'ของใช้ในบ้านประจำสัปดาห์'
-    }
-  },
-  {
-    id: 'r6', projectId: 'p2', status: 'done',
-    uploadedAt: '2026-04-15T14:00:00Z',
-    data: {
-      vendor: 'Adobe Inc.', date: '2026-04-15',
-      total_thb: 1980.00, original_currency: 'USD',
-      original_amount: 60.00, exchange_rate: 33.0,
-      category_id: 'software',
-      items: [{ name: 'Creative Cloud Subscription', amount_thb: 1980.00 }],
-      tax_thb: 0, note: 'ค่าซอฟต์แวร์รายเดือน'
-    }
-  },
-  {
-    id: 'r7', projectId: 'p2', status: 'done',
-    uploadedAt: '2026-06-01T11:00:00Z',
-    data: {
-      vendor: 'AIS Online Service', date: '2026-06-01',
-      total_thb: 899.00, original_currency: 'THB',
-      original_amount: 899.00, exchange_rate: 1.0,
-      category_id: 'utility',
-      items: [{ name: 'Fibre 500/500 Mbps', amount_thb: 899.00 }],
-      tax_thb: 58.81, note: 'ค่าอินเทอร์เน็ตรายเดือน'
-    }
-  }
-];
+var initialReceipts = [];
 
-var STORAGE_KEY = 'receipt-demo-v3';
+var STORAGE_KEY = 'receipt-v4-prod';
 
 var state = {
   projects: [],
@@ -377,7 +302,7 @@ var state = {
   uploading: false,
   toast: null,
   summaryMode: 'month',
-  summaryYear: 2026
+  summaryYear: new Date().getFullYear()
 };
 
 function loadState() {
@@ -423,6 +348,17 @@ function getCatInfo(id) {
     if (CATEGORIES[i].id === id) return CATEGORIES[i];
   }
   return CATEGORIES[8];
+}
+
+function detectCategory(text) {
+  text = text.toLowerCase();
+  for (var cat in KEYWORDS_CATEGORY) {
+    var keywords = KEYWORDS_CATEGORY[cat];
+    for (var i = 0; i < keywords.length; i++) {
+      if (text.indexOf(keywords[i]) !== -1) return cat;
+    }
+  }
+  return 'other';
 }
 
 function escapeHtml(s) {
@@ -475,29 +411,105 @@ function resizeAndToDataUrl(file, maxPx, quality) {
   });
 }
 
-function mockExtract() {
+function extractNumbersFromText(text) {
+  var numbers = text.match(/[\d,\.]+/g) || [];
+  return numbers.map(function(n) {
+    return parseFloat(n.replace(/,/g, ''));
+  }).filter(function(n) { return n && n > 0; }).sort(function(a, b) { return b - a; });
+}
+
+function performOCR(imageDataUrl) {
+  return Tesseract.recognize(imageDataUrl, 'tha+eng', {
+    logger: function(m) { console.log('OCR:', m.status, m.progress); }
+  }).then(function(result) {
+    return result.data.text;
+  });
+}
+
+function fetchExchangeRate(currencyCode, targetDate) {
   return new Promise(function(resolve) {
-    setTimeout(function() {
-      var vendors = ['7-Eleven', "Lotus's", 'BigC', 'Tops', 'Family Mart', 'Tesco'];
-      var cats = ['food','other','utility','travel'];
-      var today = new Date().toISOString().slice(0, 10);
-      var amount = Math.round((Math.random() * 500 + 50) * 100) / 100;
-      resolve({
-        vendor: vendors[Math.floor(Math.random() * vendors.length)],
-        date: today,
-        total_thb: amount,
-        original_currency: 'THB',
-        original_amount: amount,
-        exchange_rate: 1.0,
-        category_id: cats[Math.floor(Math.random() * cats.length)],
-        items: [
-          { name: 'รายการตัวอย่าง 1', amount_thb: Math.round(amount * 0.6 * 100) / 100 },
-          { name: 'รายการตัวอย่าง 2', amount_thb: Math.round(amount * 0.4 * 100) / 100 }
-        ],
-        tax_thb: Math.round(amount * 0.07 * 100) / 100,
-        note: '⚠️ ข้อมูลตัวอย่าง (สุ่ม) — ไม่ใช่ AI จริง'
+    try {
+      var cache = JSON.parse(localStorage.getItem(CACHE_CURRENCY) || '{}');
+      var cacheKey = currencyCode + '_' + targetDate;
+      if (cache[cacheKey]) {
+        resolve(cache[cacheKey]);
+        return;
+      }
+      fetch(CURRENCY_API + currencyCode)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          var rate = data.rates && data.rates.THB ? data.rates.THB : 1.0;
+          cache[cacheKey] = rate;
+          localStorage.setItem(CACHE_CURRENCY, JSON.stringify(cache));
+          resolve(rate);
+        })
+        .catch(function() { resolve(1.0); });
+    } catch (e) {
+      resolve(1.0);
+    }
+  });
+}
+
+function analyzeReceipt(imageDataUrl, uploadDate) {
+  return new Promise(function(resolve, reject) {
+    performOCR(imageDataUrl)
+      .then(function(text) {
+        var lines = text.split('\n');
+        var vendor = lines[0] || 'ร้านค้า';
+        var numbers = extractNumbersFromText(text);
+        var total_thb = numbers.length > 0 ? numbers[0] : 0;
+        var category = detectCategory(text);
+        
+        var items = [];
+        for (var i = 1; i < Math.min(lines.length, 5); i++) {
+          if (lines[i].trim().length > 0) {
+            var lineNum = extractNumbersFromText(lines[i]);
+            items.push({
+              name: lines[i].replace(/[\d,\.]+/g, '').trim(),
+              amount_thb: lineNum.length > 0 ? lineNum[0] : 0
+            });
+          }
+        }
+
+        var isCurrency = text.match(/USD|EUR|JPY|KRW|CNY|SGD|MYR|HKD|AUD|GBP/i);
+        var detectedCurrency = isCurrency ? isCurrency[0].toUpperCase() : 'THB';
+
+        if (detectedCurrency !== 'THB') {
+          fetchExchangeRate(detectedCurrency, uploadDate).then(function(rate) {
+            var data = {
+              vendor: vendor,
+              date: uploadDate,
+              total_thb: Math.round(total_thb * rate * 100) / 100,
+              original_currency: detectedCurrency,
+              original_amount: total_thb,
+              exchange_rate: rate,
+              category_id: category,
+              items: items,
+              tax_thb: Math.round(total_thb * 0.07 * 100) / 100,
+              note: '🤖 AI จดจำจากรูป (Tesseract OCR)',
+              ocr_text: text
+            };
+            resolve(data);
+          });
+        } else {
+          resolve({
+            vendor: vendor,
+            date: uploadDate,
+            total_thb: total_thb,
+            original_currency: 'THB',
+            original_amount: total_thb,
+            exchange_rate: 1.0,
+            category_id: category,
+            items: items,
+            tax_thb: Math.round(total_thb * 0.07 * 100) / 100,
+            note: '🤖 AI จดจำจากรูป (Tesseract OCR)',
+            ocr_text: text
+          });
+        }
+      })
+      .catch(function(err) {
+        reject(new Error('OCR วิเคราะห์ไม่ได้: ' + err.message));
       });
-    }, 1500 + Math.random() * 1500);
   });
 }
 
@@ -533,10 +545,14 @@ function renderReceiptItem(receipt) {
   if (receipt.status === 'processing') {
     titleHtml = '<span class="badge-processing"><span class="spinner"></span> วิเคราะห์อยู่…</span>';
   } else if (receipt.status === 'error') {
-    titleHtml = '<span class="badge-error">❌ วิเคราะห์ไม่ได้</span>';
+    titleHtml = '<span class="badge-error">❌ ' + escapeHtml(receipt.errorMsg || 'วิเคราะห์ไม่ได้') + '</span>';
   } else {
     titleHtml = escapeHtml(d && d.vendor || 'ไม่ทราบร้าน');
   }
+
+  var currencyBadge = (d && d.original_currency && d.original_currency !== 'THB')
+    ? '<span class="badge-currency">' + d.original_currency + '</span>'
+    : '';
 
   return '<button class="item" onclick="actions.selectReceipt(\'' + receipt.id + '\')">' +
     '<div class="thumb">' +
@@ -548,6 +564,7 @@ function renderReceiptItem(receipt) {
       '<div class="item-title">' + titleHtml + '</div>' +
       '<div class="item-meta">' +
         (cat ? '<span class="badge badge-cat">' + cat.icon + ' ' + cat.label + '</span>' : '') +
+        currencyBadge +
         (proj ? '<span class="badge badge-proj">' + escapeHtml(proj.name) + '</span>' : '') +
         '<span class="badge-date">' + dateTH + '</span>' +
       '</div>' +
@@ -725,18 +742,37 @@ function renderReceiptSheet() {
   if (receipt.status === 'processing') {
     detailHtml = '<div style="text-align:center;padding:32px 0;color:#94a3b8">' +
       '<span class="spinner" style="width:28px;height:28px"></span>' +
-      '<div style="font-weight:600;margin-top:12px">กำลังวิเคราะห์…</div>' +
+      '<div style="font-weight:600;margin-top:12px">🤖 กำลังวิเคราะห์ OCR…</div>' +
+      '<div style="font-size:12px;margin-top:6px">อาจใช้เวลา 30-60 วินาที</div>' +
     '</div>';
   } else if (receipt.status === 'error') {
     detailHtml = '<div style="background:#fff1f2;border-radius:14px;padding:16px;margin-bottom:16px;color:#dc2626;font-size:14px">' +
-      '<strong>วิเคราะห์ไม่สำเร็จ</strong><br>' +
+      '<strong>❌ วิเคราะห์ไม่สำเร็จ</strong><br>' +
       '<span style="opacity:.8">' + escapeHtml(receipt.errorMsg || '') + '</span>' +
     '</div>';
   } else if (d) {
+    var currencyHtml = '';
+    if (d.original_currency !== 'THB') {
+      currencyHtml = '<div class="currency-info">' +
+        '<div class="currency-row">' +
+          '<span class="currency-label">สกุลเงิน:</span>' +
+          '<span class="currency-value">' + d.original_currency + ' ' + d.original_amount.toFixed(2) + '</span>' +
+        '</div>' +
+        '<div class="currency-row">' +
+          '<span class="currency-label">อัตราแลกเปลี่ยน:</span>' +
+          '<span class="currency-value">1 ' + d.original_currency + ' = ' + fmt(d.exchange_rate) + ' ฿</span>' +
+        '</div>' +
+        '<div class="currency-row">' +
+          '<span class="currency-label">วันที่:</span>' +
+          '<span class="currency-value">' + dateTH + '</span>' +
+        '</div>' +
+      '</div>';
+    }
+
     var itemsHtml = '';
     if (d.items && d.items.length > 0) {
       itemsHtml = '<div class="items-box">' +
-        '<div class="items-label">รายการ</div>' +
+        '<div class="items-label">🛍️ รายการค่าใช้จ่าย</div>' +
         d.items.map(function(it) {
           return '<div class="items-row">' +
             '<span class="items-row-name">' + escapeHtml(it.name) + '</span>' +
@@ -745,7 +781,7 @@ function renderReceiptSheet() {
         }).join('') +
         (d.tax_thb > 0
           ? '<div class="items-tax">' +
-              '<span>VAT / ภาษี</span>' +
+              '<span>💰 VAT / ภาษี</span>' +
               '<span>' + fmt(d.tax_thb) + '</span>' +
             '</div>'
           : '') +
@@ -762,23 +798,19 @@ function renderReceiptSheet() {
 
     detailHtml = '<div class="detail-header">' +
       '<div>' +
-        '<div class="detail-vendor">' + escapeHtml(d.vendor) + '</div>' +
+        '<div class="detail-vendor">🏪 ' + escapeHtml(d.vendor) + '</div>' +
         '<div class="detail-date">' + dateTH + '</div>' +
       '</div>' +
       '<div style="text-align:right">' +
         '<div class="detail-amount">' + fmt(d.total_thb) + '</div>' +
-        (d.original_currency !== 'THB'
-          ? '<div class="detail-curr">' +
-              escapeHtml(d.original_currency) + ' ' + d.original_amount.toFixed(2) + ' × ' + d.exchange_rate +
-            '</div>'
-          : '') +
       '</div>' +
     '</div>' +
+    currencyHtml +
     '<div class="cat-pill">' + (cat ? cat.icon + ' ' + cat.label : '') + '</div>' +
     itemsHtml +
     (d.note ? '<div class="detail-note">' + escapeHtml(d.note) + '</div>' : '') +
     '<div class="form-group">' +
-      '<div class="form-label">โปรเจค</div>' +
+      '<div class="form-label">📂 โปรเจค</div>' +
       '<select class="input" style="background:#f8fafc" ' +
         'onchange="actions.updateReceiptProject(\'' + receipt.id + '\', this.value)">' +
         projOptionsHtml +
@@ -792,7 +824,7 @@ function renderReceiptSheet() {
       (receipt.imageUrl ? '<img src="' + escapeHtml(receipt.imageUrl) + '" alt="receipt" class="receipt-img">' : '') +
       detailHtml +
       '<button class="btn-danger" onclick="actions.deleteReceiptConfirm(\'' + receipt.id + '\')">' +
-        'ลบใบเสร็จนี้' +
+        '🗑️ ลบใบเสร็จนี้' +
       '</button>' +
     '</div>';
 }
@@ -810,7 +842,6 @@ function render() {
     renderReceiptSheet();
 }
 
-// Global actions object (referenced from inline onclick)
 window.actions = {
   setTab: function(tab) { state.tab = tab; render(); },
   selectProject: function(id) { state.activeProject = id; render(); },
@@ -872,7 +903,10 @@ window.actions = {
     for (var i = 0; i < fileList.length; i++) {
       if (fileList[i].type.indexOf('image/') === 0) files.push(fileList[i]);
     }
-    if (!files.length) return;
+    if (!files.length) {
+      showToast('❌ โปรดเลือกรูปภาพ', 'error');
+      return;
+    }
     state.uploading = true;
     render();
 
@@ -885,6 +919,8 @@ window.actions = {
       }
       var file = queue.shift();
       var tempId = 'temp_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+      var uploadDate = new Date().toISOString().slice(0, 10);
+      
       state.receipts.unshift({
         id: tempId, projectId: state.activeProject,
         status: 'processing',
@@ -898,7 +934,7 @@ window.actions = {
           return r.id === tempId ? Object.assign({}, r, { imageUrl: dataUrl }) : r;
         });
         render();
-        return mockExtract();
+        return analyzeReceipt(dataUrl, uploadDate);
       }).then(function(data) {
         state.receipts = state.receipts.map(function(r) {
           return r.id === tempId ? Object.assign({}, r, { status: 'done', data: data }) : r;
@@ -913,7 +949,7 @@ window.actions = {
         });
         saveState();
         render();
-        showToast('❌ ' + (err.message || 'error'), 'error');
+        showToast('❌ ' + (err.message || 'เกิดข้อผิดพลาด'), 'error');
         processNext();
       });
     }
@@ -921,7 +957,6 @@ window.actions = {
   }
 };
 
-// Init
 loadState();
 render();
 </script>
